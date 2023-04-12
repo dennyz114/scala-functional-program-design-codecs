@@ -177,14 +177,15 @@ trait DecoderInstances:
 
   /** A decoder for `Int` values. Hint: use the `isValidInt` method of `BigDecimal`. */
   given Decoder[Int] =
-    Decoder.fromPartialFunction()
-  // TODO Define a given value of type `Decoder[Int]`
+    Decoder.fromPartialFunction{ case Json.Num(n) if n.isValidInt => n.toInt}
 
   /** A decoder for `String` values */
-  // TODO Define a given value of type `Decoder[String]`
+  given Decoder[String] =
+    Decoder.fromPartialFunction{ case Json.Str(s) => s}
 
   /** A decoder for `Boolean` values */
-  // TODO Define a given value of type `Decoder[Boolean]`
+  given Decoder[Boolean] =
+    Decoder.fromPartialFunction{ case Json.Bool(b: Boolean) => b.booleanValue()}
 
   /**
     * A decoder for JSON arrays. It decodes each item of the array
@@ -193,7 +194,11 @@ trait DecoderInstances:
     */
   given [A] (using decoder: Decoder[A]): Decoder[List[A]] =
     Decoder.fromFunction {
-      ???
+      case Json.Arr(arr) =>
+        val elements = arr.map(decoder.decode)
+        if (elements forall(_.isDefined)) Some(elements.map(_.get))
+        else None
+      case _ => None
     }
 
   /**
@@ -201,7 +206,10 @@ trait DecoderInstances:
     * the supplied `name` using the given `decoder`.
     */
   def field[A](name: String)(using decoder: Decoder[A]): Decoder[A] =
-    ???
+    Decoder.fromFunction{
+      case Json.Obj(map) if map.contains(name) => decoder.decode(map(name))
+      case _ => None
+    }
 
 
 case class Person(name: String, age: Int)
@@ -218,7 +226,9 @@ trait PersonCodecs:
 
   /** The corresponding decoder for `Person` */
   given Decoder[Person] =
-    ???
+    Decoder.field[String]("name")
+      .zip(Decoder.field[Int]("age"))
+      .transform[Person](user => Person(user._1, user._2))
 
 
 case class Contacts(people: List[Person])
@@ -227,11 +237,16 @@ object Contacts extends ContactsCodecs
 
 trait ContactsCodecs:
 
-  // TODO Define the encoder and the decoder for `Contacts`
   // The JSON representation of a value of type `Contacts` should be
   // a JSON object with a single field named “people” containing an
   // array of values of type `Person` (reuse the `Person` codecs)
-  ()
+  given Encoder[Contacts] =
+    ObjectEncoder.field[List[Person]]("people")
+      .transform[Contacts](contacts => contacts.people)
+    
+  given Decoder[Contacts] =
+    Decoder.field[List[Person]]("people")
+      .transform[Contacts](contacts => Contacts(contacts))
 
 
 // In case you want to try your code, here is a simple `Main`
